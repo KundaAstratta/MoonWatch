@@ -1,0 +1,9 @@
+<settings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://developer.garmin.com/downloads/connect-iq/resources.xsd">
+    <setting propertyKey="@Properties.chronoState" title="@Strings.ChronoStateTitle">
+        <settingConfig type="list">
+            <listEntry value="0">@Strings.ChronoStateStopped</listEntry>
+            <listEntry value="1">@Strings.ChronoStateRunning</listEntry>
+            <listEntry value="2">@Strings.ChronoStatePaused</listEntry>
+        </settingConfig>
+    </setting>
+</settings>
