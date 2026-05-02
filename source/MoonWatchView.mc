@@ -29,6 +29,11 @@ class MoonWatchView extends WatchUi.WatchFace {
     // Per-frame cache
     private var _cachedMoonPhase as Float = 0.0f;
     private var _moonPhaseHour as Number = -1;
+    private var _cachedSunConst as String = "---";
+    private var _cachedSunProgress as Float = 0.0f;
+    private var _sunCacheDay as Number = -1;
+    private var _cachedEqTime as Float = 0.0f;
+    private var _eqTimeCacheDay as Number = -1;
 
     function initialize() {
         WatchFace.initialize();
@@ -77,11 +82,24 @@ class MoonWatchView extends WatchUi.WatchFace {
 
     // Update the view
     function onUpdate(dc as Dc) as Void {
-        // Refresh moon phase cache once per hour
-        var currentHour = System.getClockTime().hour;
+        // Refresh caches once per hour (moon) / once per day (sun constellation)
+        var clockNow = System.getClockTime();
+        var currentHour = clockNow.hour;
         if (currentHour != _moonPhaseHour) {
             _cachedMoonPhase = getMoonPhase();
             _moonPhaseHour = currentHour;
+        }
+        var info = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
+        var currentDay = info.day;
+        if (currentDay != _sunCacheDay) {
+            var sunData = getSunConstellation();
+            _cachedSunConst    = sunData[0] as String;
+            _cachedSunProgress = sunData[1] as Float;
+            _sunCacheDay = currentDay;
+        }
+        if (currentDay != _eqTimeCacheDay) {
+            _cachedEqTime    = getEquationOfTime();
+            _eqTimeCacheDay  = currentDay;
         }
 
         // Clear screen to black
@@ -240,8 +258,8 @@ class MoonWatchView extends WatchUi.WatchFace {
         var subRadius = (_radius * 0.25).toNumber();
         var offset    = (_radius * 0.55).toNumber();
 
-        var type9 = "Battery";
-        var type3 = "Date";
+        var type9 = "SunConst";
+        var type3 = "EqTime";
         // En AOD, le chrono n'est pas actif — on garde batterie/date
         if (!isAod && (_isChronoRunning || _chronoElapsedTime > 0)) {
             type9 = "ChronoMin";
@@ -285,8 +303,8 @@ class MoonWatchView extends WatchUi.WatchFace {
 
             // Icônes phases lunaires — mode actif uniquement
             if (type.equals("Moon")) {
-                var iconRad = 4;
-                var iconDist = r + 10;
+                var iconRad = 6;
+                var iconDist = r + 12;
                 dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
                 dc.fillCircle(x, y - iconDist, iconRad);
                 dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
@@ -305,20 +323,58 @@ class MoonWatchView extends WatchUi.WatchFace {
             }
 
             // Ticks subdial — mode actif uniquement
-            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-            dc.setPenWidth(1);
-            for (var i = 0; i < 12; i++) {
-                var tAngle = (i / 12.0) * Math.PI * 2 - Math.PI / 2;
-                var cosT = Math.cos(tAngle);
-                var sinT = Math.sin(tAngle);
-                if (i == 0) {
-                    var pTA = [(x + (r-7) * cosT).toNumber(),              (y + (r-7) * sinT).toNumber()];
-                    var pTL = [(x + (r-1) * cosT - 2.5 * sinT).toNumber(), (y + (r-1) * sinT + 2.5 * cosT).toNumber()];
-                    var pTR = [(x + (r-1) * cosT + 2.5 * sinT).toNumber(), (y + (r-1) * sinT - 2.5 * cosT).toNumber()];
-                    dc.fillPolygon([pTA, pTL, pTR]);
-                } else {
-                    var tickLen = (i % 3 == 0) ? 4 : 2;
-                    dc.drawLine(x + (r-tickLen)*cosT, y + (r-tickLen)*sinT, x + r*cosT, y + r*sinT);
+            if (type.equals("EqTime")) {
+                // Ticks personnalisés : 0, ±5, ±10, ±15 min
+                // Mapping : 0 min → 12h, 1 min = 5° → ±15 min = ±75°
+                // Valeurs en minutes à marquer
+                var eotMarks  = [0, 5, -5, 10, -10, 15, -15] as Array<Number>;
+                var markLong  = [true, false, false, false, false, true, true] as Array<Boolean>;
+                dc.setPenWidth(1);
+                for (var m = 0; m < eotMarks.size(); m++) {
+                    // angle : 0 min → -π/2 (12h), +5 min → +25° dans le sens horaire
+                    var markAngle = (eotMarks[m].toDouble() / 72.0) * Math.PI * 2 - Math.PI / 2;
+                    var cosM = Math.cos(markAngle);
+                    var sinM = Math.sin(markAngle);
+                    var tickLen = markLong[m] ? 6 : 3;
+
+                    if (eotMarks[m] == 0) {
+                        // Repère 0 : triangle pointant vers l'intérieur (comme repère 12h standard)
+                        dc.setColor(0x00CCFF, Graphics.COLOR_TRANSPARENT);
+                        var pTA = [(x + (r-7) * cosM).toNumber(),              (y + (r-7) * sinM).toNumber()];
+                        var pTL = [(x + (r-1) * cosM - 2.5 * sinM).toNumber(), (y + (r-1) * sinM + 2.5 * cosM).toNumber()];
+                        var pTR = [(x + (r-1) * cosM + 2.5 * sinM).toNumber(), (y + (r-1) * sinM - 2.5 * cosM).toNumber()];
+                        dc.fillPolygon([pTA, pTL, pTR]);
+                    } else {
+                        // ±5, ±10, ±15 : ticks proportionnels
+                        dc.setColor(eotMarks[m] > 0 ? 0x00AACC : 0x0088AA, Graphics.COLOR_TRANSPARENT);
+                        dc.drawLine(
+                            (x + (r - tickLen) * cosM).toNumber(), (y + (r - tickLen) * sinM).toNumber(),
+                            (x + r * cosM).toNumber(),             (y + r * sinM).toNumber()
+                        );
+                    }
+                }
+
+                // Label "EoT" sous le cadran
+                dc.setColor(0x006688, Graphics.COLOR_TRANSPARENT);
+                dc.drawText(x, y + r + 7, Graphics.FONT_XTINY, "EoT", Graphics.TEXT_JUSTIFY_CENTER);
+
+            } else {
+                // Ticks génériques pour les autres subdials
+                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+                dc.setPenWidth(1);
+                for (var i = 0; i < 12; i++) {
+                    var tAngle = (i / 12.0) * Math.PI * 2 - Math.PI / 2;
+                    var cosT = Math.cos(tAngle);
+                    var sinT = Math.sin(tAngle);
+                    if (i == 0) {
+                        var pTA = [(x + (r-7) * cosT).toNumber(),              (y + (r-7) * sinT).toNumber()];
+                        var pTL = [(x + (r-1) * cosT - 2.5 * sinT).toNumber(), (y + (r-1) * sinT + 2.5 * cosT).toNumber()];
+                        var pTR = [(x + (r-1) * cosT + 2.5 * sinT).toNumber(), (y + (r-1) * sinT - 2.5 * cosT).toNumber()];
+                        dc.fillPolygon([pTA, pTL, pTR]);
+                    } else {
+                        var tickLen = (i % 3 == 0) ? 4 : 2;
+                        dc.drawLine(x + (r-tickLen)*cosT, y + (r-tickLen)*sinT, x + r*cosT, y + r*sinT);
+                    }
                 }
             }
         } else {
@@ -330,19 +386,21 @@ class MoonWatchView extends WatchUi.WatchFace {
 
         // Calcul de la valeur
         var val = 0.0;
-        if (type.equals("Battery")) {
-            var stats = System.getSystemStats();
-            val = stats.battery / 100.0;
+        if (type.equals("SunConst")) {
+            val = _cachedSunProgress;
             if (!isAod) {
-                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-                dc.drawText(x, y, Graphics.FONT_XTINY, stats.battery.toNumber().toString() + "%", Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+                dc.setColor(0xFFCC44, Graphics.COLOR_TRANSPARENT); // doré solaire
+                dc.drawText(x, y, Graphics.FONT_XTINY, _cachedSunConst, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             }
-        } else if (type.equals("Date")) {
-            var info = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
-            val = info.day / 31.0;
+        } else if (type.equals("EqTime")) {
+            // Mapping centré : 0 min → 12h (val=0.0), plage ±20 min → ±100° sur le cadran
+            // val = 0.5 + eot/72.0  (1 min = 5°, 20 min = 100° = 0.278 tour)
+            val = _cachedEqTime / 72.0;
             if (!isAod) {
-                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-                dc.drawText(x, y, Graphics.FONT_XTINY, info.day.toString(), Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+                var eotRounded = _cachedEqTime.toNumber();
+                var eotStr = (eotRounded >= 0) ? "+" + eotRounded.toString() + "m" : eotRounded.toString() + "m";
+                dc.setColor(0x00CCFF, Graphics.COLOR_TRANSPARENT); // cyan astronomique
+                dc.drawText(x, y, Graphics.FONT_XTINY, eotStr, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             }
         } else if (type.equals("Moon")) {
             val = _cachedMoonPhase;
@@ -369,10 +427,13 @@ class MoonWatchView extends WatchUi.WatchFace {
         var sin   = Math.sin(angle);
 
         if (isAod) {
-            // AOD : aiguille simple ligne
+            // AOD : aiguille simple ligne, dorée pour SunConst
+            var aodColor = type.equals("SunConst") ? 0x664400
+                         : type.equals("EqTime")   ? 0x004455
+                         : 0x888888;
             dc.setColor(0x1a1a1a, Graphics.COLOR_TRANSPARENT);
             dc.drawLine(x, y, (x - (r*0.25)*cos).toNumber(), (y - (r*0.25)*sin).toNumber());
-            dc.setColor(0x888888, Graphics.COLOR_TRANSPARENT);
+            dc.setColor(aodColor, Graphics.COLOR_TRANSPARENT);
             dc.setPenWidth(1);
             dc.drawLine(x, y, (x + (r*0.82)*cos).toNumber(), (y + (r*0.82)*sin).toNumber());
             dc.setColor(0x444444, Graphics.COLOR_TRANSPARENT);
@@ -384,10 +445,10 @@ class MoonWatchView extends WatchUi.WatchFace {
             var hw      = 1.5;
             var ctHW    = 2.5;
             var handColor = _colorHandMain;
-            if (type.equals("Battery")) {
-                if (val > 0.5)      { handColor = 0x00CC00; }
-                else if (val > 0.2) { handColor = 0xFFAA00; }
-                else                { handColor = 0xFF2200; }
+            if (type.equals("SunConst")) {
+                handColor = 0xFFAA00; // doré solaire
+            } else if (type.equals("EqTime")) {
+                handColor = 0x00CCFF; // cyan astronomique
             }
             var pCTip = [(x - ctLen*cos).toNumber(),  (y - ctLen*sin).toNumber()];
             var pCL   = [(x - ctHW*sin).toNumber(),   (y + ctHW*cos).toNumber()];
@@ -410,6 +471,92 @@ class MoonWatchView extends WatchUi.WatchFace {
         }
     }
     
+    // Returns ecliptic longitude of the Sun in degrees [0, 360)
+    // Low-precision algorithm (~0.01°), depends only on the date
+    private function getSunEclipticLongitude() as Float {
+        // Days since J2000.0 (2000-Jan-01 12:00 UTC = Unix 946728000)
+        var d = (Time.now().value() - 946728000).toDouble() / 86400.0;
+
+        // Mean longitude and mean anomaly (degrees) — modulo manuel (Double % Float non supporté)
+        var L = 280.46 + 0.9856474 * d;
+        L = L - 360.0 * Math.floor(L / 360.0);
+
+        var g = 357.528 + 0.9856003 * d;
+        g = g - 360.0 * Math.floor(g / 360.0);
+
+        var gRad  = g  * Math.PI / 180.0;
+        var g2Rad = 2.0 * gRad;
+
+        // Equation of centre correction → ecliptic longitude
+        var lambda = L + 1.915 * Math.sin(gRad) + 0.020 * Math.sin(g2Rad);
+        lambda = lambda - 360.0 * Math.floor(lambda / 360.0);
+
+        return lambda.toFloat();
+    }
+
+    // IAU zodiacal constellations traversed by the Sun (13, Ophiuchus included)
+    // Returns [abbr, progress] where progress 0.0=entry 1.0=exit
+    private function getSunConstellation() as Array {
+        var lon = getSunEclipticLongitude().toDouble();
+
+        // Séparation en 3 tableaux homogènes pour éviter les warnings de type
+        var starts = [351.0, 29.0,  53.0,  90.0, 118.0, 138.0, 174.0, 218.0, 241.0, 247.0, 266.0, 299.0, 327.0] as Array<Double>;
+        var ends   = [ 29.0, 53.0,  90.0, 118.0, 138.0, 174.0, 218.0, 241.0, 247.0, 266.0, 299.0, 327.0, 351.0] as Array<Double>;
+        var abbrs  = ["PSC", "ARI", "TAU", "GEM", "CNC", "LEO", "VIR", "LIB", "SCO", "OPH", "SGR", "CAP", "AQR"] as Array<String>;
+
+        for (var i = 0; i < starts.size(); i++) {
+            var start = starts[i];
+            var end   = ends[i];
+            var abbr  = abbrs[i];
+
+            var inConst = false;
+            var progress = 0.0;
+
+            if (start > end) {
+                // Wraps through 0° (PSC: 351→29)
+                var span = (360.0 - start) + end;
+                if (lon >= start || lon < end) {
+                    inConst = true;
+                    var elapsed = (lon >= start) ? lon - start : (360.0 - start) + lon;
+                    progress = elapsed / span;
+                }
+            } else {
+                if (lon >= start && lon < end) {
+                    inConst = true;
+                    progress = (lon - start) / (end - start);
+                }
+            }
+
+            if (inConst) {
+                return [abbr, progress.toFloat()] as Array;
+            }
+        }
+
+        // Fallback (should never happen)
+        return ["---", 0.0f] as Array;
+    }
+
+    // Equation of Time — returns difference (true solar time − mean solar time) in minutes
+    // Range: approx −14.3 min (early Feb) to +16.4 min (early Nov), two zero crossings per year
+    // Algorithm: Spencer (1971) approximation, precision ~30 seconds
+    private function getEquationOfTime() as Float {
+        var info = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
+
+        // Day of year (approx — ignores leap year, acceptable for EoT precision)
+        var daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as Array<Number>;
+        var N = info.day;
+        for (var m = 1; m < info.month; m++) {
+            N += daysInMonth[m];
+        }
+
+        var B = 2.0 * Math.PI * (N - 81).toDouble() / 364.0;
+        var eot = 9.87 * Math.sin(2.0 * B)
+                - 7.53 * Math.cos(B)
+                - 1.5  * Math.sin(B);
+
+        return eot.toFloat(); // minutes, signed
+    }
+
     // Calculates moon phase (0.0 to 0.99)
     // 0.0 = New Moon, 0.25 = First Quarter, 0.5 = Full Moon, 0.75 = Last Quarter
     private function getMoonPhase() as Float {
