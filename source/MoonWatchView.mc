@@ -827,7 +827,11 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.drawLine(pNarrR[0], pNarrR[1], pShoulR[0], pShoulR[1]);
 
         // Cap lume à la pointe
-        dc.setColor(_colorLume, Graphics.COLOR_TRANSPARENT);
+        if (_isInSleepMode) {
+            dc.setColor(_colorLume, Graphics.COLOR_TRANSPARENT);
+        } else {
+            dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_TRANSPARENT);
+        }
         dc.fillCircle(pTip[0].toNumber(), pTip[1].toNumber(), 2);
 
         // === Lume slot (20% → épaule 80%) ===
