@@ -759,9 +759,9 @@ class MoonWatchView extends WatchUi.WatchFace {
         var tailLen    = 20;
         var halfWidth  = width / 2.0;
 
-        // Épaule à 80%, section fine à 40% de largeur
-        var xShoulder  = length * 0.8;
-        var halfNarrow = halfWidth * 0.4;
+        // Épaule à 83%, section fine à 30% de largeur (pointe affinée façon lance)
+        var xShoulder  = length * 0.83;
+        var halfNarrow = halfWidth * 0.3;
 
         // Formule de transformation locale → écran :
         //   x_screen = cx + lx·cos − ly·sin
@@ -820,19 +820,31 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.setColor(shadowColor, Graphics.COLOR_TRANSPARENT);
         dc.fillPolygon([pTip, pNarrR, pShoulC]);
 
+        // Arête centrale brillante (filet de lumière façon Dauphine polie)
+        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(1);
+        dc.drawLine(pShoulC[0], pShoulC[1], pTip[0], pTip[1]);
+
         // Filet d'épaule (cran baïonnette) — plus marqué
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(2);
         dc.drawLine(pNarrL[0], pNarrL[1], pShoulL[0], pShoulL[1]);
         dc.drawLine(pNarrR[0], pNarrR[1], pShoulR[0], pShoulR[1]);
 
-        // Cap lume à la pointe
+        // Cap lume à la pointe — goutte effilée (teardrop) façon Dauphine
         if (_isInSleepMode) {
             dc.setColor(_colorLume, Graphics.COLOR_TRANSPARENT);
         } else {
             dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_TRANSPARENT);
         }
-        dc.fillCircle(pTip[0].toNumber(), pTip[1].toNumber(), 2);
+        var gouteLen  = 5.0;                 // longueur de la goutte sous la pointe
+        var gouteHalf = 2.0;                 // demi-largeur du bulbe
+        var gouteBase = length.toFloat() - gouteLen;
+        var pGouteL = [_centerX + gouteBase * cos - (-gouteHalf) * sin, _centerY + gouteBase * sin + (-gouteHalf) * cos];
+        var pGouteR = [_centerX + gouteBase * cos - ( gouteHalf) * sin, _centerY + gouteBase * sin + ( gouteHalf) * cos];
+        var pGouteC = [_centerX + gouteBase * cos,                      _centerY + gouteBase * sin];
+        dc.fillPolygon([pTip, pGouteL, pGouteR]);             // corps effilé vers la pointe
+        dc.fillCircle(pGouteC[0].toNumber(), pGouteC[1].toNumber(), gouteHalf.toNumber()); // bulbe arrondi
 
         // === Lume slot (20% → épaule 80%) ===
         var lumeStart = length * 0.2;
