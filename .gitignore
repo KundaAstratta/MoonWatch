@@ -1,0 +1,8 @@
+# Sorties de build Connect IQ
+bin/
+
+# Captures de référence locales (parité visuelle entre phases)
+refs/
+
+# Réglages locaux de l'éditeur
+.vscode/

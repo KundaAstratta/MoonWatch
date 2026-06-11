@@ -29,13 +29,10 @@ class MoonWatchApp extends Application.AppBase {
 
     // Return the initial view of your application here
     function getInitialView() as [Views] or [Views, InputDelegates] {
-        _view = new MoonWatchView();
+        var view = new MoonWatchView();
+        _view = view;
         var delegate = new MoonWatchDelegate();
-        return [_view, delegate];
+        return [view, delegate];
     }
 
-}
-
-function getApp() as MoonWatchApp {
-    return Application.getApp() as MoonWatchApp;
 }
