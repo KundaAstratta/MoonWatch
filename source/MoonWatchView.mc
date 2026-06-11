@@ -116,8 +116,8 @@ class MoonWatchView extends WatchUi.WatchFace {
             drawTachymeter(dc);
             drawSubdials(dc, false);
             drawBranding(dc, false);
-            drawHands(dc);    // Heures et minutes en dessous
-            drawSeconds(dc);  // Secondes tout en haut (convention horlogère)
+            drawHands(dc);    // Heures et minutes (chacune avec son disque)
+            drawSeconds(dc);  // Secondes + sommet du moyeu, au premier plan
         } else {
             // Sleep Mode (AOD): Anti burn-in — éléments atténués
             drawSleepBackground(dc);
@@ -125,6 +125,7 @@ class MoonWatchView extends WatchUi.WatchFace {
             drawSubdials(dc, true);
             drawBranding(dc, true);
             drawHands(dc);
+            drawHubTop(dc); // sommet du moyeu (pas de trotteuse en veille)
         }
     }
 
@@ -260,7 +261,7 @@ class MoonWatchView extends WatchUi.WatchFace {
 
         var type9 = "SunConst";
         var type3 = "EqTime";
-        // En AOD, le chrono n'est pas actif — on garde batterie/date
+        // En AOD, le chrono n'est pas affiché — on garde SunConst/EqTime
         if (!isAod && (_isChronoRunning || _chronoElapsedTime > 0)) {
             type9 = "ChronoMin";
             type3 = "ChronoSec";
@@ -393,8 +394,7 @@ class MoonWatchView extends WatchUi.WatchFace {
                 dc.drawText(x, y, Graphics.FONT_XTINY, _cachedSunConst, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             }
         } else if (type.equals("EqTime")) {
-            // Mapping centré : 0 min → 12h (val=0.0), plage ±20 min → ±100° sur le cadran
-            // val = 0.5 + eot/72.0  (1 min = 5°, 20 min = 100° = 0.278 tour)
+            // Mapping centré : 0 min → 12h (val=0.0), 1 min = 5° (72 min = tour complet)
             val = _cachedEqTime / 72.0;
             if (!isAod) {
                 var eotRounded = _cachedEqTime.toNumber();
@@ -543,9 +543,11 @@ class MoonWatchView extends WatchUi.WatchFace {
         var info = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
 
         // Day of year (approx — ignores leap year, acceptable for EoT precision)
+        // info.day/info.month sont typés (Number or String) par le SDK — FORMAT_SHORT garantit Number
         var daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as Array<Number>;
-        var N = info.day;
-        for (var m = 1; m < info.month; m++) {
+        var N     = info.day as Number;
+        var month = info.month as Number;
+        for (var m = 1; m < month; m++) {
             N += daysInMonth[m];
         }
 
@@ -559,36 +561,18 @@ class MoonWatchView extends WatchUi.WatchFace {
 
     // Calculates moon phase (0.0 to 0.99)
     // 0.0 = New Moon, 0.25 = First Quarter, 0.5 = Full Moon, 0.75 = Last Quarter
+    // Âge lunaire fractionnaire : cycles écoulés depuis une nouvelle lune de
+    // référence (1970-01-07 20:35 UTC ≈ epoch 592500), partie fractionnaire = phase
     private function getMoonPhase() as Float {
-        var now = Time.now();
-        
-        // Known New Moon: January 6, 2000 at 12:24 UTC
-        // Julian Date for Jan 6, 2000 is approx 2451550.1
-        // Synodic Month = 29.530588853 days
-        
-        // Simpler approach: Use a reference date close to now or standard algorithm
-        // Reference: 1970-01-07 20:35 UTC was a New Moon.
-        
-        // Algorithm (Conway's or simple elapsed days)
-        // Let's use seconds since 1970 (Time.now().value())
-        // Reference New Moon: Unix Timestamp 0 is 1970-01-01. 
-        // 1970-01-07 20:35 UTC is approx 592500 seconds.
-        
-        var nowVal = now.value();
-        var lunarCycle = 2551442.877; // 29.530588 * 24 * 3600
-        var newMoonRef = 592500; // Early known new moon timestamp
-        
-        var diff = nowVal - newMoonRef;
-        // if (diff < 0) { diff += lunarCycle; } // handled below
+        var nowVal = Time.now().value();
+        var lunarCycle = 2551442.877; // mois synodique : 29.530588 j × 86400 s
+        var newMoonRef = 592500;      // nouvelle lune de référence (epoch, s)
 
-        // Manual modulo for floating point: a % n = a - (n * floor(a/n))
-        // Or simpler: just get the fractional part of total cycles
-        
-        var totalCycles = diff.toDouble() / lunarCycle;
-        var phase = totalCycles - totalCycles.toLong(); // Fractional part
-        
+        var totalCycles = (nowVal - newMoonRef).toDouble() / lunarCycle;
+        var phase = totalCycles - totalCycles.toLong(); // partie fractionnaire
+
         if (phase < 0) { phase += 1.0; }
-        
+
         return phase.toFloat();
     }
     
@@ -683,10 +667,10 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.setColor(_colorHandMain, Graphics.COLOR_TRANSPARENT);
         
         // Hour Hand
-        drawDauphineHand(dc, hourAngle, (_radius * 0.5).toNumber(), 9);
+        drawBatonHand(dc, hourAngle, (_radius * 0.5).toNumber(), 9, 16, 0x555555);
         
         // Minute Hand
-        drawDauphineHand(dc, minAngle, (_radius * 0.75).toNumber(), 8);
+        drawBatonHand(dc, minAngle, (_radius * 0.75).toNumber(), 8, 12, 0x888888);
         
     }
     
@@ -739,99 +723,93 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.setPenWidth(1);
         dc.drawLine(_centerX, _centerY, xFwd, yFwd);
 
-        // --- Cap central argenté ---
-        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.fillCircle(_centerX, _centerY, 5);
-        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawCircle(_centerX, _centerY, 5);
-        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
-        dc.fillCircle(_centerX, _centerY, 2);
+        // Disque du moyeu de la trotteuse (sommet du cône) — au premier plan,
+        // la trotteuse reste donc devant et solidaire de son cercle.
+        drawHubTop(dc);
     }
 
-    private function drawDauphineHand(dc as Dc, angle as Float, length as Number, width as Number) as Void {
-        // Style "Baïonnette" : corps pleine largeur jusqu'à 80%, puis section fine (40%) jusqu'à la pointe
+    private function drawBatonHand(dc as Dc, angle as Float, length as Number, width as Number, capRadius as Number, capColor as Number) as Void {
+        // Style "Baton" Speedmaster : largeur constante du moyeu à la pointe,
+        // base pleine largeur de la couleur du moyeu (capColor) près du pivot,
+        // corps blanc ombré 3D, pointe triangulaire biseautée.
+        // Termine par son propre disque de moyeu (capRadius/capColor) pour que
+        // l'aiguille paraisse solidaire de son cercle et s'empile proprement.
         var shadowColor = Graphics.COLOR_LT_GRAY;
         var mainColor   = _colorHandMain;
 
         var cos = Math.cos(angle);
         var sin = Math.sin(angle);
 
-        var tailLen    = 20;
+        var tailLen    = 4;                // talon caché sous le cap central
         var halfWidth  = width / 2.0;
 
-        // Épaule à 83%, section fine à 30% de largeur (pointe affinée façon lance)
-        var xShoulder  = length * 0.83;
-        var halfNarrow = halfWidth * 0.3;
+        var baseEnd    = length * 0.30;    // fin de la base grise = départ du lume
+        var taperStart = length * 0.87;    // début de la pointe
 
         // Formule de transformation locale → écran :
         //   x_screen = cx + lx·cos − ly·sin
         //   y_screen = cy + lx·sin + ly·cos
 
-        // --- Corps (−tailLen → épaule, pleine largeur) ---
-        var pBaseL  = [_centerX + (-tailLen) * cos - (-halfWidth) * sin, _centerY + (-tailLen) * sin + (-halfWidth) * cos];
-        var pBaseR  = [_centerX + (-tailLen) * cos - ( halfWidth) * sin, _centerY + (-tailLen) * sin + ( halfWidth) * cos];
-        var pBaseC  = [_centerX + (-tailLen) * cos,                      _centerY + (-tailLen) * sin];
-        var pShoulL = [_centerX +  xShoulder * cos - (-halfWidth) * sin, _centerY +  xShoulder * sin + (-halfWidth) * cos];
-        var pShoulR = [_centerX +  xShoulder * cos - ( halfWidth) * sin, _centerY +  xShoulder * sin + ( halfWidth) * cos];
-        var pShoulC = [_centerX +  xShoulder * cos,                      _centerY +  xShoulder * sin];
-
-        // --- Section fine (épaule → pointe) ---
-        var pNarrL  = [_centerX + xShoulder * cos - (-halfNarrow) * sin, _centerY + xShoulder * sin + (-halfNarrow) * cos];
-        var pNarrR  = [_centerX + xShoulder * cos - ( halfNarrow) * sin, _centerY + xShoulder * sin + ( halfNarrow) * cos];
-        var pTip    = [_centerX + length.toFloat() * cos,                _centerY + length.toFloat() * sin];
+        // --- Points du fût (largeur constante : talon → début de pointe) ---
+        var pBaseL  = [_centerX + (-tailLen)  * cos - (-halfWidth) * sin, _centerY + (-tailLen)  * sin + (-halfWidth) * cos];
+        var pBaseR  = [_centerX + (-tailLen)  * cos - ( halfWidth) * sin, _centerY + (-tailLen)  * sin + ( halfWidth) * cos];
+        var pMidL   = [_centerX +  baseEnd    * cos - (-halfWidth) * sin, _centerY +  baseEnd    * sin + (-halfWidth) * cos];
+        var pMidR   = [_centerX +  baseEnd    * cos - ( halfWidth) * sin, _centerY +  baseEnd    * sin + ( halfWidth) * cos];
+        var pMidC   = [_centerX +  baseEnd    * cos,                      _centerY +  baseEnd    * sin];
+        var pTaperL = [_centerX +  taperStart * cos - (-halfWidth) * sin, _centerY +  taperStart * sin + (-halfWidth) * cos];
+        var pTaperR = [_centerX +  taperStart * cos - ( halfWidth) * sin, _centerY +  taperStart * sin + ( halfWidth) * cos];
+        var pTaperC = [_centerX +  taperStart * cos,                      _centerY +  taperStart * sin];
+        var pTip    = [_centerX +  length.toFloat() * cos,                _centerY +  length.toFloat() * sin];
 
         // === Contours noirs ===
         var outlineW = 1.5;
-        var oHW  = halfWidth  + outlineW;
-        var oNar = halfNarrow + outlineW;
+        var oHW = halfWidth + outlineW;
 
-        // Contour du corps (rectangle)
-        var opBaseL  = [_centerX + (-tailLen) * cos - (-oHW) * sin, _centerY + (-tailLen) * sin + (-oHW) * cos];
-        var opBaseR  = [_centerX + (-tailLen) * cos - ( oHW) * sin, _centerY + (-tailLen) * sin + ( oHW) * cos];
-        var opShoulL = [_centerX +  xShoulder * cos - (-oHW) * sin, _centerY +  xShoulder * sin + (-oHW) * cos];
-        var opShoulR = [_centerX +  xShoulder * cos - ( oHW) * sin, _centerY +  xShoulder * sin + ( oHW) * cos];
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([opShoulL, opShoulR, opBaseR, opBaseL]);
 
-        // Contour de la section fine (triangle)
-        var opNarrL  = [_centerX + xShoulder * cos - (-oNar) * sin,           _centerY + xShoulder * sin + (-oNar) * cos];
-        var opNarrR  = [_centerX + xShoulder * cos - ( oNar) * sin,           _centerY + xShoulder * sin + ( oNar) * cos];
-        var opTip    = [_centerX + (length.toFloat() + outlineW) * cos,       _centerY + (length.toFloat() + outlineW) * sin];
-        dc.fillPolygon([opTip, opNarrL, opNarrR]);
+        // Contour du fût (rectangle pleine largeur, talon → début de pointe)
+        var obBaseL  = [_centerX + (-tailLen)  * cos - (-oHW) * sin, _centerY + (-tailLen)  * sin + (-oHW) * cos];
+        var obBaseR  = [_centerX + (-tailLen)  * cos - ( oHW) * sin, _centerY + (-tailLen)  * sin + ( oHW) * cos];
+        var obTaperL = [_centerX +  taperStart * cos - (-oHW) * sin, _centerY +  taperStart * sin + (-oHW) * cos];
+        var obTaperR = [_centerX +  taperStart * cos - ( oHW) * sin, _centerY +  taperStart * sin + ( oHW) * cos];
+        dc.fillPolygon([obTaperL, obTaperR, obBaseR, obBaseL]);
+
+        // Contour de la pointe (triangle)
+        var opTip = [_centerX + (length.toFloat() + outlineW) * cos, _centerY + (length.toFloat() + outlineW) * sin];
+        dc.fillPolygon([opTip, obTaperL, obTaperR]);
+
+        // === Base pleine largeur (talon → départ du lume) ===
+        // Couleur du disque de moyeu pour que l'aiguille paraisse coulée dans son cercle.
+        dc.setColor(capColor, Graphics.COLOR_TRANSPARENT);
+        dc.fillPolygon([pBaseL, pBaseR, pMidR, pMidL]);
 
         // === Corps (rectangle pleine largeur) ===
         dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pShoulL, pShoulR, pBaseR, pBaseL]);
+        dc.fillPolygon([pMidL, pMidR, pTaperR, pTaperL]);
 
         // Ombre moitié droite du corps
         dc.setColor(shadowColor, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pShoulR, pShoulC, pBaseC, pBaseR]);
+        dc.fillPolygon([pMidR, pMidC, pTaperC, pTaperR]);
 
-        // === Section fine (triangle épaule → pointe) — 3 facettes biseautées ===
+        // === Pointe (triangle corps → pointe) — 3 facettes biseautées ===
         // Base : triangle complet en mainColor
         dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pTip, pNarrL, pNarrR]);
+        dc.fillPolygon([pTip, pTaperL, pTaperR]);
 
         // Facette gauche (highlight) : arête lumineuse côté gauche
         dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pTip, pNarrL, pShoulC]);
+        dc.fillPolygon([pTip, pTaperL, pTaperC]);
 
         // Facette droite (ombre) : arête sombre côté droit
         dc.setColor(shadowColor, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pTip, pNarrR, pShoulC]);
+        dc.fillPolygon([pTip, pTaperR, pTaperC]);
 
-        // Arête centrale brillante (filet de lumière façon Dauphine polie)
+        // Arête centrale brillante (filet de lumière)
         dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(1);
-        dc.drawLine(pShoulC[0], pShoulC[1], pTip[0], pTip[1]);
+        dc.drawLine(pTaperC[0], pTaperC[1], pTip[0], pTip[1]);
 
-        // Filet d'épaule (cran baïonnette) — plus marqué
-        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
-        dc.setPenWidth(2);
-        dc.drawLine(pNarrL[0], pNarrL[1], pShoulL[0], pShoulL[1]);
-        dc.drawLine(pNarrR[0], pNarrR[1], pShoulR[0], pShoulR[1]);
-
-        // Cap lume à la pointe — goutte effilée (teardrop) façon Dauphine
+        // Cap lume à la pointe — goutte effilée (teardrop)
         if (_isInSleepMode) {
             dc.setColor(_colorLume, Graphics.COLOR_TRANSPARENT);
         } else {
@@ -846,9 +824,9 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.fillPolygon([pTip, pGouteL, pGouteR]);             // corps effilé vers la pointe
         dc.fillCircle(pGouteC[0].toNumber(), pGouteC[1].toNumber(), gouteHalf.toNumber()); // bulbe arrondi
 
-        // === Lume slot (20% → épaule 80%) ===
-        var lumeStart = length * 0.2;
-        var lumeEnd   = xShoulder;
+        // === Lume slot (30% → 82%, centré sur le corps) ===
+        var lumeStart = length * 0.30;
+        var lumeEnd   = length * 0.82;
         var lumeWidth = halfWidth * 0.5;
 
         var pL1 = [_centerX + lumeStart * cos - (-lumeWidth) * sin, _centerY + lumeStart * sin + (-lumeWidth) * cos];
@@ -859,20 +837,21 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.setColor(_colorLume, Graphics.COLOR_TRANSPARENT);
         dc.fillPolygon([pL1, pL2, pL3, pL4]);
 
-        // === Queue (contrepoids) — pleine largeur ===
-        var pCentL = [(_centerX + halfWidth * sin).toNumber(), (_centerY - halfWidth * cos).toNumber()];
-        var pCentR = [(_centerX - halfWidth * sin).toNumber(), (_centerY + halfWidth * cos).toNumber()];
-        dc.setColor(shadowColor, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pCentL, pCentR, pBaseR, pBaseL]);
+        // Disque du moyeu propre à cette aiguille — dessiné juste après son corps
+        // pour que l'aiguille paraisse solidaire de son cercle, et que l'aiguille
+        // suivante (puis la trotteuse) s'empile correctement par-dessus.
+        dc.setColor(capColor, Graphics.COLOR_TRANSPARENT);
+        dc.fillCircle(_centerX, _centerY, capRadius);
+    }
 
-        // === Cap central ===
-        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.fillCircle(_centerX, _centerY, width * 0.8);
-        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawCircle(_centerX, _centerY, width * 0.8);
-        dc.fillCircle(_centerX, _centerY, 2);
-
-        dc.setColor(_colorHandMain, Graphics.COLOR_TRANSPARENT);
+    // Sommet du moyeu : petit disque clair des secondes + pivot, achevant le
+    // dégradé heures (Ø max, foncé) → secondes (Ø min, clair). En mode actif il
+    // est dessiné par la trotteuse (premier plan) ; en veille, après les aiguilles.
+    private function drawHubTop(dc as Dc) as Void {
+        dc.setColor(0xCCCCCC, Graphics.COLOR_TRANSPARENT);             // secondes (Ø min)
+        dc.fillCircle(_centerX, _centerY, 8);
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT); // pivot
+        dc.fillCircle(_centerX, _centerY, 4);
     }
 
     private function drawConcentricBackground(dc as Dc) as Void {
