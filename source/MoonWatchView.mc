@@ -86,19 +86,19 @@ class MoonWatchView extends WatchUi.WatchFace {
         var clockNow = System.getClockTime();
         var currentHour = clockNow.hour;
         if (currentHour != _moonPhaseHour) {
-            _cachedMoonPhase = getMoonPhase();
+            _cachedMoonPhase = AstroCalc.moonPhase(Time.now().value());
             _moonPhaseHour = currentHour;
         }
         var info = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
         var currentDay = info.day;
         if (currentDay != _sunCacheDay) {
-            var sunData = getSunConstellation();
+            var sunData = AstroCalc.sunConstellation(Time.now().value());
             _cachedSunConst    = sunData[0] as String;
             _cachedSunProgress = sunData[1] as Float;
             _sunCacheDay = currentDay;
         }
         if (currentDay != _eqTimeCacheDay) {
-            _cachedEqTime    = getEquationOfTime();
+            _cachedEqTime    = AstroCalc.equationOfTime(Time.now().value());
             _eqTimeCacheDay  = currentDay;
         }
 
@@ -471,111 +471,10 @@ class MoonWatchView extends WatchUi.WatchFace {
         }
     }
     
-    // Returns ecliptic longitude of the Sun in degrees [0, 360)
-    // Low-precision algorithm (~0.01°), depends only on the date
-    private function getSunEclipticLongitude() as Float {
-        // Days since J2000.0 (2000-Jan-01 12:00 UTC = Unix 946728000)
-        var d = (Time.now().value() - 946728000).toDouble() / 86400.0;
+    // Calculs astronomiques (Soleil, constellations, équation du temps, lune)
+    // extraits dans le module pur AstroCalc — voir source/AstroCalc.mc (P2).
 
-        // Mean longitude and mean anomaly (degrees) — modulo manuel (Double % Float non supporté)
-        var L = 280.46 + 0.9856474 * d;
-        L = L - 360.0 * Math.floor(L / 360.0);
 
-        var g = 357.528 + 0.9856003 * d;
-        g = g - 360.0 * Math.floor(g / 360.0);
-
-        var gRad  = g  * Math.PI / 180.0;
-        var g2Rad = 2.0 * gRad;
-
-        // Equation of centre correction → ecliptic longitude
-        var lambda = L + 1.915 * Math.sin(gRad) + 0.020 * Math.sin(g2Rad);
-        lambda = lambda - 360.0 * Math.floor(lambda / 360.0);
-
-        return lambda.toFloat();
-    }
-
-    // IAU zodiacal constellations traversed by the Sun (13, Ophiuchus included)
-    // Returns [abbr, progress] where progress 0.0=entry 1.0=exit
-    private function getSunConstellation() as Array {
-        var lon = getSunEclipticLongitude().toDouble();
-
-        // Séparation en 3 tableaux homogènes pour éviter les warnings de type
-        var starts = [351.0, 29.0,  53.0,  90.0, 118.0, 138.0, 174.0, 218.0, 241.0, 247.0, 266.0, 299.0, 327.0] as Array<Double>;
-        var ends   = [ 29.0, 53.0,  90.0, 118.0, 138.0, 174.0, 218.0, 241.0, 247.0, 266.0, 299.0, 327.0, 351.0] as Array<Double>;
-        var abbrs  = ["PSC", "ARI", "TAU", "GEM", "CNC", "LEO", "VIR", "LIB", "SCO", "OPH", "SGR", "CAP", "AQR"] as Array<String>;
-
-        for (var i = 0; i < starts.size(); i++) {
-            var start = starts[i];
-            var end   = ends[i];
-            var abbr  = abbrs[i];
-
-            var inConst = false;
-            var progress = 0.0;
-
-            if (start > end) {
-                // Wraps through 0° (PSC: 351→29)
-                var span = (360.0 - start) + end;
-                if (lon >= start || lon < end) {
-                    inConst = true;
-                    var elapsed = (lon >= start) ? lon - start : (360.0 - start) + lon;
-                    progress = elapsed / span;
-                }
-            } else {
-                if (lon >= start && lon < end) {
-                    inConst = true;
-                    progress = (lon - start) / (end - start);
-                }
-            }
-
-            if (inConst) {
-                return [abbr, progress.toFloat()] as Array;
-            }
-        }
-
-        // Fallback (should never happen)
-        return ["---", 0.0f] as Array;
-    }
-
-    // Equation of Time — returns difference (true solar time − mean solar time) in minutes
-    // Range: approx −14.3 min (early Feb) to +16.4 min (early Nov), two zero crossings per year
-    // Algorithm: Spencer (1971) approximation, precision ~30 seconds
-    private function getEquationOfTime() as Float {
-        var info = Gregorian.info(Time.now(), Time.FORMAT_SHORT);
-
-        // Day of year (approx — ignores leap year, acceptable for EoT precision)
-        // info.day/info.month sont typés (Number or String) par le SDK — FORMAT_SHORT garantit Number
-        var daysInMonth = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as Array<Number>;
-        var N     = info.day as Number;
-        var month = info.month as Number;
-        for (var m = 1; m < month; m++) {
-            N += daysInMonth[m];
-        }
-
-        var B = 2.0 * Math.PI * (N - 81).toDouble() / 364.0;
-        var eot = 9.87 * Math.sin(2.0 * B)
-                - 7.53 * Math.cos(B)
-                - 1.5  * Math.sin(B);
-
-        return eot.toFloat(); // minutes, signed
-    }
-
-    // Calculates moon phase (0.0 to 0.99)
-    // 0.0 = New Moon, 0.25 = First Quarter, 0.5 = Full Moon, 0.75 = Last Quarter
-    // Âge lunaire fractionnaire : cycles écoulés depuis une nouvelle lune de
-    // référence (1970-01-07 20:35 UTC ≈ epoch 592500), partie fractionnaire = phase
-    private function getMoonPhase() as Float {
-        var nowVal = Time.now().value();
-        var lunarCycle = 2551442.877; // mois synodique : 29.530588 j × 86400 s
-        var newMoonRef = 592500;      // nouvelle lune de référence (epoch, s)
-
-        var totalCycles = (nowVal - newMoonRef).toDouble() / lunarCycle;
-        var phase = totalCycles - totalCycles.toLong(); // partie fractionnaire
-
-        if (phase < 0) { phase += 1.0; }
-
-        return phase.toFloat();
-    }
-    
     private function getPolar(cx as Number, cy as Number, r as Number, angleDeg as Number) as Array<Number> {
         var angleRad = angleDeg * Math.PI / 180.0;
         var x = cx + r * Math.cos(angleRad);
