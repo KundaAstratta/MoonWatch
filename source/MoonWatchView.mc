@@ -9,6 +9,15 @@ import Toybox.Time.Gregorian;
 
 class MoonWatchView extends WatchUi.WatchFace {
 
+    // Types de compteurs auxiliaires (subdials)
+    enum {
+        SUBDIAL_SUN_CONST,
+        SUBDIAL_EQ_TIME,
+        SUBDIAL_MOON,
+        SUBDIAL_CHRONO_MIN,
+        SUBDIAL_CHRONO_SEC
+    }
+
     private var _centerX as Number = 0;
     private var _centerY as Number = 0;
     private var _radius as Number = 0;
@@ -240,15 +249,15 @@ class MoonWatchView extends WatchUi.WatchFace {
     }
 
     private function drawSubdials(dc as Dc, isAod as Boolean) as Void {
-        var subRadius = (_radius * 0.25).toNumber();
-        var offset    = (_radius * 0.55).toNumber();
+        var subRadius = (_radius * FaceTheme.SUBDIAL_RADIUS_RATIO).toNumber();
+        var offset    = (_radius * FaceTheme.SUBDIAL_OFFSET_RATIO).toNumber();
 
-        var type9 = "SunConst";
-        var type3 = "EqTime";
+        var type9 = SUBDIAL_SUN_CONST;
+        var type3 = SUBDIAL_EQ_TIME;
         // En AOD, le chrono n'est pas affiché — on garde SunConst/EqTime
         if (!isAod && _chrono.isActive()) {
-            type9 = "ChronoMin";
-            type3 = "ChronoSec";
+            type9 = SUBDIAL_CHRONO_MIN;
+            type3 = SUBDIAL_CHRONO_SEC;
         }
 
         var pos9 = getPolar(_centerX, _centerY, offset, 180);
@@ -257,12 +266,12 @@ class MoonWatchView extends WatchUi.WatchFace {
         var pos3 = getPolar(_centerX, _centerY, offset, 0);
         drawSubdial(dc, pos3[0], pos3[1], subRadius, type3, isAod);
 
-        var offset6 = (offset * 0.75).toNumber();
+        var offset6 = (offset * FaceTheme.SUBDIAL_OFFSET6_RATIO).toNumber();
         var pos6    = getPolar(_centerX, _centerY, offset6, 90);
-        drawSubdial(dc, pos6[0], pos6[1], subRadius, "Moon", isAod);
+        drawSubdial(dc, pos6[0], pos6[1], subRadius, SUBDIAL_MOON, isAod);
     }
 
-    private function drawSubdial(dc as Dc, x as Number, y as Number, r as Number, type as String, isAod as Boolean) as Void {
+    private function drawSubdial(dc as Dc, x as Number, y as Number, r as Number, type as Number, isAod as Boolean) as Void {
         // Fond
         dc.setColor(isAod ? 0x080808 : 0x020202, Graphics.COLOR_TRANSPARENT);
         dc.fillCircle(x, y, isAod ? r : r + 2);
@@ -287,80 +296,15 @@ class MoonWatchView extends WatchUi.WatchFace {
             dc.drawCircle(x, y, r - 2);
 
             // Icônes phases lunaires — mode actif uniquement
-            if (type.equals("Moon")) {
-                var iconRad = 6;
-                var iconDist = r + 12;
-                dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
-                dc.fillCircle(x, y - iconDist, iconRad);
-                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-                dc.drawCircle(x, y - iconDist, iconRad);
-                dc.fillCircle(x + iconDist, y, iconRad);
-                dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
-                dc.fillRectangle(x + iconDist - iconRad, y - iconRad, iconRad, iconRad * 2);
-                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-                dc.drawCircle(x + iconDist, y, iconRad);
-                dc.fillCircle(x, y + iconDist, iconRad);
-                dc.fillCircle(x - iconDist, y, iconRad);
-                dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
-                dc.fillRectangle(x - iconDist, y - iconRad, iconRad, iconRad * 2);
-                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-                dc.drawCircle(x - iconDist, y, iconRad);
+            if (type == SUBDIAL_MOON) {
+                drawSubdialMoonIcons(dc, x, y, r);
             }
 
-            // Ticks subdial — mode actif uniquement
-            if (type.equals("EqTime")) {
-                // Ticks personnalisés : 0, ±5, ±10, ±15 min
-                // Mapping : 0 min → 12h, 1 min = 5° → ±15 min = ±75°
-                // Valeurs en minutes à marquer
-                var eotMarks  = [0, 5, -5, 10, -10, 15, -15] as Array<Number>;
-                var markLong  = [true, false, false, false, false, true, true] as Array<Boolean>;
-                dc.setPenWidth(1);
-                for (var m = 0; m < eotMarks.size(); m++) {
-                    // angle : 0 min → -π/2 (12h), +5 min → +25° dans le sens horaire
-                    var markAngle = (eotMarks[m].toDouble() / 72.0) * Math.PI * 2 - Math.PI / 2;
-                    var cosM = Math.cos(markAngle);
-                    var sinM = Math.sin(markAngle);
-                    var tickLen = markLong[m] ? 6 : 3;
-
-                    if (eotMarks[m] == 0) {
-                        // Repère 0 : triangle pointant vers l'intérieur (comme repère 12h standard)
-                        dc.setColor(0x00CCFF, Graphics.COLOR_TRANSPARENT);
-                        var pTA = [(x + (r-7) * cosM).toNumber(),              (y + (r-7) * sinM).toNumber()];
-                        var pTL = [(x + (r-1) * cosM - 2.5 * sinM).toNumber(), (y + (r-1) * sinM + 2.5 * cosM).toNumber()];
-                        var pTR = [(x + (r-1) * cosM + 2.5 * sinM).toNumber(), (y + (r-1) * sinM - 2.5 * cosM).toNumber()];
-                        dc.fillPolygon([pTA, pTL, pTR]);
-                    } else {
-                        // ±5, ±10, ±15 : ticks proportionnels
-                        dc.setColor(eotMarks[m] > 0 ? 0x00AACC : 0x0088AA, Graphics.COLOR_TRANSPARENT);
-                        dc.drawLine(
-                            (x + (r - tickLen) * cosM).toNumber(), (y + (r - tickLen) * sinM).toNumber(),
-                            (x + r * cosM).toNumber(),             (y + r * sinM).toNumber()
-                        );
-                    }
-                }
-
-                // Label "EoT" sous le cadran
-                dc.setColor(0x006688, Graphics.COLOR_TRANSPARENT);
-                dc.drawText(x, y + r + 7, Graphics.FONT_XTINY, "EoT", Graphics.TEXT_JUSTIFY_CENTER);
-
+            // Graduations — mode actif uniquement
+            if (type == SUBDIAL_EQ_TIME) {
+                drawSubdialEotTicks(dc, x, y, r);
             } else {
-                // Ticks génériques pour les autres subdials
-                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-                dc.setPenWidth(1);
-                for (var i = 0; i < 12; i++) {
-                    var tAngle = (i / 12.0) * Math.PI * 2 - Math.PI / 2;
-                    var cosT = Math.cos(tAngle);
-                    var sinT = Math.sin(tAngle);
-                    if (i == 0) {
-                        var pTA = [(x + (r-7) * cosT).toNumber(),              (y + (r-7) * sinT).toNumber()];
-                        var pTL = [(x + (r-1) * cosT - 2.5 * sinT).toNumber(), (y + (r-1) * sinT + 2.5 * cosT).toNumber()];
-                        var pTR = [(x + (r-1) * cosT + 2.5 * sinT).toNumber(), (y + (r-1) * sinT - 2.5 * cosT).toNumber()];
-                        dc.fillPolygon([pTA, pTL, pTR]);
-                    } else {
-                        var tickLen = (i % 3 == 0) ? 4 : 2;
-                        dc.drawLine(x + (r-tickLen)*cosT, y + (r-tickLen)*sinT, x + r*cosT, y + r*sinT);
-                    }
-                }
+                drawSubdialGenericTicks(dc, x, y, r);
             }
         } else {
             // AOD : anneau atténué uniquement
@@ -371,13 +315,13 @@ class MoonWatchView extends WatchUi.WatchFace {
 
         // Calcul de la valeur
         var val = 0.0;
-        if (type.equals("SunConst")) {
+        if (type == SUBDIAL_SUN_CONST) {
             val = _cachedSunProgress;
             if (!isAod) {
                 dc.setColor(0xFFCC44, Graphics.COLOR_TRANSPARENT); // doré solaire
                 dc.drawText(x, y, Graphics.FONT_XTINY, _cachedSunConst, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             }
-        } else if (type.equals("EqTime")) {
+        } else if (type == SUBDIAL_EQ_TIME) {
             // Mapping centré : 0 min → 12h (val=0.0), 1 min = 5° (72 min = tour complet)
             val = _cachedEqTime / 72.0;
             if (!isAod) {
@@ -386,16 +330,16 @@ class MoonWatchView extends WatchUi.WatchFace {
                 dc.setColor(0x00CCFF, Graphics.COLOR_TRANSPARENT); // cyan astronomique
                 dc.drawText(x, y, Graphics.FONT_XTINY, eotStr, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
             }
-        } else if (type.equals("Moon")) {
+        } else if (type == SUBDIAL_MOON) {
             val = _cachedMoonPhase;
-        } else if (type.equals("ChronoMin")) {
+        } else if (type == SUBDIAL_CHRONO_MIN) {
             var elapsedSec = _chrono.elapsedSeconds(Time.now().value());
             val = ((elapsedSec / 60) % 60) / 60.0;
             if (!isAod) {
                 dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
                 dc.drawText(x, y + r + 7, Graphics.FONT_XTINY, "MIN", Graphics.TEXT_JUSTIFY_CENTER);
             }
-        } else if (type.equals("ChronoSec")) {
+        } else if (type == SUBDIAL_CHRONO_SEC) {
             var elapsedSec = _chrono.elapsedSeconds(Time.now().value());
             val = (elapsedSec % 60) / 60.0;
             if (!isAod) {
@@ -404,14 +348,95 @@ class MoonWatchView extends WatchUi.WatchFace {
             }
         }
 
+        drawSubdialHand(dc, x, y, r, val, type, isAod);
+    }
+
+    // Icônes des 4 phases lunaires disposées autour du subdial (mode actif).
+    private function drawSubdialMoonIcons(dc as Dc, x as Number, y as Number, r as Number) as Void {
+        var iconRad = 6;
+        var iconDist = r + 12;
+        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
+        dc.fillCircle(x, y - iconDist, iconRad);
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawCircle(x, y - iconDist, iconRad);
+        dc.fillCircle(x + iconDist, y, iconRad);
+        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
+        dc.fillRectangle(x + iconDist - iconRad, y - iconRad, iconRad, iconRad * 2);
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawCircle(x + iconDist, y, iconRad);
+        dc.fillCircle(x, y + iconDist, iconRad);
+        dc.fillCircle(x - iconDist, y, iconRad);
+        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
+        dc.fillRectangle(x - iconDist, y - iconRad, iconRad, iconRad * 2);
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawCircle(x - iconDist, y, iconRad);
+    }
+
+    // Graduations du subdial Équation du temps : repère 0 (triangle) + ticks
+    // ±5/±10/±15 min (1 min = 5°), label "EoT".
+    private function drawSubdialEotTicks(dc as Dc, x as Number, y as Number, r as Number) as Void {
+        var eotMarks  = [0, 5, -5, 10, -10, 15, -15] as Array<Number>;
+        var markLong  = [true, false, false, false, false, true, true] as Array<Boolean>;
+        dc.setPenWidth(1);
+        for (var m = 0; m < eotMarks.size(); m++) {
+            var markAngle = (eotMarks[m].toDouble() / 72.0) * Math.PI * 2 - Math.PI / 2;
+            var cosM = Math.cos(markAngle);
+            var sinM = Math.sin(markAngle);
+            var tickLen = markLong[m] ? 6 : 3;
+
+            if (eotMarks[m] == 0) {
+                // Repère 0 : triangle pointant vers l'intérieur (comme repère 12h standard)
+                dc.setColor(0x00CCFF, Graphics.COLOR_TRANSPARENT);
+                var pTA = [(x + (r-7) * cosM).toNumber(),              (y + (r-7) * sinM).toNumber()];
+                var pTL = [(x + (r-1) * cosM - 2.5 * sinM).toNumber(), (y + (r-1) * sinM + 2.5 * cosM).toNumber()];
+                var pTR = [(x + (r-1) * cosM + 2.5 * sinM).toNumber(), (y + (r-1) * sinM - 2.5 * cosM).toNumber()];
+                dc.fillPolygon([pTA, pTL, pTR]);
+            } else {
+                // ±5, ±10, ±15 : ticks proportionnels
+                dc.setColor(eotMarks[m] > 0 ? 0x00AACC : 0x0088AA, Graphics.COLOR_TRANSPARENT);
+                dc.drawLine(
+                    (x + (r - tickLen) * cosM).toNumber(), (y + (r - tickLen) * sinM).toNumber(),
+                    (x + r * cosM).toNumber(),             (y + r * sinM).toNumber()
+                );
+            }
+        }
+
+        // Label "EoT" sous le cadran
+        dc.setColor(0x006688, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(x, y + r + 7, Graphics.FONT_XTINY, "EoT", Graphics.TEXT_JUSTIFY_CENTER);
+    }
+
+    // Graduations génériques : 12 ticks, repère 12h triangulaire.
+    private function drawSubdialGenericTicks(dc as Dc, x as Number, y as Number, r as Number) as Void {
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(1);
+        for (var i = 0; i < 12; i++) {
+            var tAngle = (i / 12.0) * Math.PI * 2 - Math.PI / 2;
+            var cosT = Math.cos(tAngle);
+            var sinT = Math.sin(tAngle);
+            if (i == 0) {
+                var pTA = [(x + (r-7) * cosT).toNumber(),              (y + (r-7) * sinT).toNumber()];
+                var pTL = [(x + (r-1) * cosT - 2.5 * sinT).toNumber(), (y + (r-1) * sinT + 2.5 * cosT).toNumber()];
+                var pTR = [(x + (r-1) * cosT + 2.5 * sinT).toNumber(), (y + (r-1) * sinT - 2.5 * cosT).toNumber()];
+                dc.fillPolygon([pTA, pTL, pTR]);
+            } else {
+                var tickLen = (i % 3 == 0) ? 4 : 2;
+                dc.drawLine(x + (r-tickLen)*cosT, y + (r-tickLen)*sinT, x + r*cosT, y + r*sinT);
+            }
+        }
+    }
+
+    // Aiguille d'un subdial : trait simple atténué en AOD, needle à contrepoids
+    // et cap en mode actif (couleur d'accent selon le type).
+    private function drawSubdialHand(dc as Dc, x as Number, y as Number, r as Number, val as Float, type as Number, isAod as Boolean) as Void {
         var angle = val * Math.PI * 2 - Math.PI / 2;
         var cos   = Math.cos(angle);
         var sin   = Math.sin(angle);
 
         if (isAod) {
             // AOD : aiguille simple ligne, dorée pour SunConst
-            var aodColor = type.equals("SunConst") ? 0x664400
-                         : type.equals("EqTime")   ? 0x004455
+            var aodColor = type == SUBDIAL_SUN_CONST ? 0x664400
+                         : type == SUBDIAL_EQ_TIME   ? 0x004455
                          : 0x888888;
             dc.setColor(0x1a1a1a, Graphics.COLOR_TRANSPARENT);
             dc.drawLine(x, y, (x - (r*0.25)*cos).toNumber(), (y - (r*0.25)*sin).toNumber());
@@ -427,9 +452,9 @@ class MoonWatchView extends WatchUi.WatchFace {
             var hw      = 1.5;
             var ctHW    = 2.5;
             var handColor = _colorHandMain;
-            if (type.equals("SunConst")) {
+            if (type == SUBDIAL_SUN_CONST) {
                 handColor = 0xFFAA00; // doré solaire
-            } else if (type.equals("EqTime")) {
+            } else if (type == SUBDIAL_EQ_TIME) {
                 handColor = 0x00CCFF; // cyan astronomique
             }
             var pCTip = [(x - ctLen*cos).toNumber(),  (y - ctLen*sin).toNumber()];
@@ -548,10 +573,10 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.setColor(_colorHandMain, Graphics.COLOR_TRANSPARENT);
         
         // Hour Hand
-        drawBatonHand(dc, hourAngle, (_radius * 0.5).toNumber(), 9, 16, 0x555555);
+        drawBatonHand(dc, hourAngle, (_radius * 0.5).toNumber(), 9, FaceTheme.HUB_HOUR_RADIUS, FaceTheme.HUB_HOUR_COLOR);
         
         // Minute Hand
-        drawBatonHand(dc, minAngle, (_radius * 0.75).toNumber(), 8, 12, 0x888888);
+        drawBatonHand(dc, minAngle, (_radius * 0.75).toNumber(), 8, FaceTheme.HUB_MIN_RADIUS, FaceTheme.HUB_MIN_COLOR);
         
     }
     
@@ -607,6 +632,13 @@ class MoonWatchView extends WatchUi.WatchFace {
         drawHubTop(dc);
     }
 
+    // Transforme un point local (lx le long de l'aiguille, ly perpendiculaire)
+    // en coordonnées écran autour du centre du cadran. Factorise la formule de
+    // rotation répétée :  x = cx + lx·cos − ly·sin ;  y = cy + lx·sin + ly·cos.
+    private function toScreen(lx as Numeric, ly as Numeric, cos as Numeric, sin as Numeric) as [Numeric, Numeric] {
+        return [_centerX + lx * cos - ly * sin, _centerY + lx * sin + ly * cos];
+    }
+
     private function drawBatonHand(dc as Dc, angle as Float, length as Number, width as Number, capRadius as Number, capColor as Number) as Void {
         // Style "Baton" Speedmaster : largeur constante du moyeu à la pointe,
         // base pleine largeur de la couleur du moyeu (capColor) près du pivot,
@@ -625,20 +657,16 @@ class MoonWatchView extends WatchUi.WatchFace {
         var baseEnd    = length * 0.30;    // fin de la base grise = départ du lume
         var taperStart = length * 0.87;    // début de la pointe
 
-        // Formule de transformation locale → écran :
-        //   x_screen = cx + lx·cos − ly·sin
-        //   y_screen = cy + lx·sin + ly·cos
-
         // --- Points du fût (largeur constante : talon → début de pointe) ---
-        var pBaseL  = [_centerX + (-tailLen)  * cos - (-halfWidth) * sin, _centerY + (-tailLen)  * sin + (-halfWidth) * cos];
-        var pBaseR  = [_centerX + (-tailLen)  * cos - ( halfWidth) * sin, _centerY + (-tailLen)  * sin + ( halfWidth) * cos];
-        var pMidL   = [_centerX +  baseEnd    * cos - (-halfWidth) * sin, _centerY +  baseEnd    * sin + (-halfWidth) * cos];
-        var pMidR   = [_centerX +  baseEnd    * cos - ( halfWidth) * sin, _centerY +  baseEnd    * sin + ( halfWidth) * cos];
-        var pMidC   = [_centerX +  baseEnd    * cos,                      _centerY +  baseEnd    * sin];
-        var pTaperL = [_centerX +  taperStart * cos - (-halfWidth) * sin, _centerY +  taperStart * sin + (-halfWidth) * cos];
-        var pTaperR = [_centerX +  taperStart * cos - ( halfWidth) * sin, _centerY +  taperStart * sin + ( halfWidth) * cos];
-        var pTaperC = [_centerX +  taperStart * cos,                      _centerY +  taperStart * sin];
-        var pTip    = [_centerX +  length.toFloat() * cos,                _centerY +  length.toFloat() * sin];
+        var pBaseL  = toScreen(-tailLen,   -halfWidth, cos, sin);
+        var pBaseR  = toScreen(-tailLen,    halfWidth, cos, sin);
+        var pMidL   = toScreen(baseEnd,    -halfWidth, cos, sin);
+        var pMidR   = toScreen(baseEnd,     halfWidth, cos, sin);
+        var pMidC   = toScreen(baseEnd,     0,         cos, sin);
+        var pTaperL = toScreen(taperStart, -halfWidth, cos, sin);
+        var pTaperR = toScreen(taperStart,  halfWidth, cos, sin);
+        var pTaperC = toScreen(taperStart,  0,         cos, sin);
+        var pTip    = toScreen(length.toFloat(), 0,    cos, sin);
 
         // === Contours noirs ===
         var outlineW = 1.5;
@@ -647,14 +675,14 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
 
         // Contour du fût (rectangle pleine largeur, talon → début de pointe)
-        var obBaseL  = [_centerX + (-tailLen)  * cos - (-oHW) * sin, _centerY + (-tailLen)  * sin + (-oHW) * cos];
-        var obBaseR  = [_centerX + (-tailLen)  * cos - ( oHW) * sin, _centerY + (-tailLen)  * sin + ( oHW) * cos];
-        var obTaperL = [_centerX +  taperStart * cos - (-oHW) * sin, _centerY +  taperStart * sin + (-oHW) * cos];
-        var obTaperR = [_centerX +  taperStart * cos - ( oHW) * sin, _centerY +  taperStart * sin + ( oHW) * cos];
+        var obBaseL  = toScreen(-tailLen,   -oHW, cos, sin);
+        var obBaseR  = toScreen(-tailLen,    oHW, cos, sin);
+        var obTaperL = toScreen(taperStart, -oHW, cos, sin);
+        var obTaperR = toScreen(taperStart,  oHW, cos, sin);
         dc.fillPolygon([obTaperL, obTaperR, obBaseR, obBaseL]);
 
         // Contour de la pointe (triangle)
-        var opTip = [_centerX + (length.toFloat() + outlineW) * cos, _centerY + (length.toFloat() + outlineW) * sin];
+        var opTip = toScreen(length.toFloat() + outlineW, 0, cos, sin);
         dc.fillPolygon([opTip, obTaperL, obTaperR]);
 
         // === Base pleine largeur (talon → départ du lume) ===
@@ -697,9 +725,9 @@ class MoonWatchView extends WatchUi.WatchFace {
         var gouteLen  = 5.0;                 // longueur de la goutte sous la pointe
         var gouteHalf = 2.0;                 // demi-largeur du bulbe
         var gouteBase = length.toFloat() - gouteLen;
-        var pGouteL = [_centerX + gouteBase * cos - (-gouteHalf) * sin, _centerY + gouteBase * sin + (-gouteHalf) * cos];
-        var pGouteR = [_centerX + gouteBase * cos - ( gouteHalf) * sin, _centerY + gouteBase * sin + ( gouteHalf) * cos];
-        var pGouteC = [_centerX + gouteBase * cos,                      _centerY + gouteBase * sin];
+        var pGouteL = toScreen(gouteBase, -gouteHalf, cos, sin);
+        var pGouteR = toScreen(gouteBase,  gouteHalf, cos, sin);
+        var pGouteC = toScreen(gouteBase,  0,         cos, sin);
         dc.fillPolygon([pTip, pGouteL, pGouteR]);             // corps effilé vers la pointe
         dc.fillCircle(pGouteC[0].toNumber(), pGouteC[1].toNumber(), gouteHalf.toNumber()); // bulbe arrondi
 
@@ -708,10 +736,10 @@ class MoonWatchView extends WatchUi.WatchFace {
         var lumeEnd   = length * 0.82;
         var lumeWidth = halfWidth * 0.5;
 
-        var pL1 = [_centerX + lumeStart * cos - (-lumeWidth) * sin, _centerY + lumeStart * sin + (-lumeWidth) * cos];
-        var pL2 = [_centerX + lumeEnd   * cos - (-lumeWidth) * sin, _centerY + lumeEnd   * sin + (-lumeWidth) * cos];
-        var pL3 = [_centerX + lumeEnd   * cos - ( lumeWidth) * sin, _centerY + lumeEnd   * sin + ( lumeWidth) * cos];
-        var pL4 = [_centerX + lumeStart * cos - ( lumeWidth) * sin, _centerY + lumeStart * sin + ( lumeWidth) * cos];
+        var pL1 = toScreen(lumeStart, -lumeWidth, cos, sin);
+        var pL2 = toScreen(lumeEnd,   -lumeWidth, cos, sin);
+        var pL3 = toScreen(lumeEnd,    lumeWidth, cos, sin);
+        var pL4 = toScreen(lumeStart,  lumeWidth, cos, sin);
 
         dc.setColor(_colorLume, Graphics.COLOR_TRANSPARENT);
         dc.fillPolygon([pL1, pL2, pL3, pL4]);
@@ -727,10 +755,10 @@ class MoonWatchView extends WatchUi.WatchFace {
     // dégradé heures (Ø max, foncé) → secondes (Ø min, clair). En mode actif il
     // est dessiné par la trotteuse (premier plan) ; en veille, après les aiguilles.
     private function drawHubTop(dc as Dc) as Void {
-        dc.setColor(0xCCCCCC, Graphics.COLOR_TRANSPARENT);             // secondes (Ø min)
-        dc.fillCircle(_centerX, _centerY, 8);
-        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT); // pivot
-        dc.fillCircle(_centerX, _centerY, 4);
+        dc.setColor(FaceTheme.HUB_SEC_COLOR, Graphics.COLOR_TRANSPARENT);   // secondes (Ø min)
+        dc.fillCircle(_centerX, _centerY, FaceTheme.HUB_SEC_RADIUS);
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);    // pivot
+        dc.fillCircle(_centerX, _centerY, FaceTheme.HUB_PIVOT_RADIUS);
     }
 
     private function drawConcentricBackground(dc as Dc) as Void {
