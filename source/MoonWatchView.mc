@@ -22,9 +22,7 @@ class MoonWatchView extends WatchUi.WatchFace {
     private var _colorLogo as Number = Graphics.COLOR_LT_GRAY;
 
     // Chronograph State
-    private var _isChronoRunning as Boolean = false;
-    private var _chronoStartTime as Long = 0l;
-    private var _chronoElapsedTime as Long = 0l;
+    private var _chrono as ChronoStopwatch = new ChronoStopwatch();
 
     // Per-frame cache
     private var _cachedMoonPhase as Float = 0.0f;
@@ -37,6 +35,7 @@ class MoonWatchView extends WatchUi.WatchFace {
 
     function initialize() {
         WatchFace.initialize();
+        _chrono.load(); // restaure l'état chrono persisté (survit reboot / changement de cadran)
     }
 
     // Applies the chronoState setting from Garmin Connect
@@ -46,23 +45,8 @@ class MoonWatchView extends WatchUi.WatchFace {
     public function applyChronoSettings() as Void {
         var val = Application.Properties.getValue("chronoState");
         var state = (val instanceof Number) ? val as Number : 0;
-        if (state == 1) {
-            // Start / Restart — always resets elapsed so hand departs from 12h
-            _chronoElapsedTime = 0l;
-            _chronoStartTime = System.getTimer().toLong();
-            _isChronoRunning = true;
-        } else if (state == 2) {
-            // Pause — capture elapsed, freeze hand on current tachymeter reading
-            if (_isChronoRunning) {
-                _chronoElapsedTime += System.getTimer().toLong() - _chronoStartTime;
-            }
-            _isChronoRunning = false;
-            _chronoStartTime = 0l;
-        } else {
-            // Reset (state == 0) — clear everything, return to clock seconds
-            _isChronoRunning = false;
-            _chronoElapsedTime = 0l;
-            _chronoStartTime = 0l;
+        if (_chrono.applyState(state, Time.now().value())) {
+            _chrono.save(); // persiste seulement si l'état a réellement changé
         }
     }
 
@@ -262,7 +246,7 @@ class MoonWatchView extends WatchUi.WatchFace {
         var type9 = "SunConst";
         var type3 = "EqTime";
         // En AOD, le chrono n'est pas affiché — on garde SunConst/EqTime
-        if (!isAod && (_isChronoRunning || _chronoElapsedTime > 0)) {
+        if (!isAod && _chrono.isActive()) {
             type9 = "ChronoMin";
             type3 = "ChronoSec";
         }
@@ -405,17 +389,15 @@ class MoonWatchView extends WatchUi.WatchFace {
         } else if (type.equals("Moon")) {
             val = _cachedMoonPhase;
         } else if (type.equals("ChronoMin")) {
-            var elapsed = _chronoElapsedTime;
-            if (_isChronoRunning) { elapsed += System.getTimer().toLong() - _chronoStartTime; }
-            val = ((elapsed / 1000) / 60 % 60) / 60.0;
+            var elapsedSec = _chrono.elapsedSeconds(Time.now().value());
+            val = ((elapsedSec / 60) % 60) / 60.0;
             if (!isAod) {
                 dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
                 dc.drawText(x, y + r + 7, Graphics.FONT_XTINY, "MIN", Graphics.TEXT_JUSTIFY_CENTER);
             }
         } else if (type.equals("ChronoSec")) {
-            var elapsed = _chronoElapsedTime;
-            if (_isChronoRunning) { elapsed += System.getTimer().toLong() - _chronoStartTime; }
-            val = ((elapsed / 1000) % 60) / 60.0;
+            var elapsedSec = _chrono.elapsedSeconds(Time.now().value());
+            val = (elapsedSec % 60) / 60.0;
             if (!isAod) {
                 dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
                 dc.drawText(x, y + r + 7, Graphics.FONT_XTINY, "SEC", Graphics.TEXT_JUSTIFY_CENTER);
@@ -577,10 +559,8 @@ class MoonWatchView extends WatchUi.WatchFace {
         // Chrono ON → sweep from 0 (for tachymeter reading)
         // Chrono OFF → regular clock seconds
         var secFrac = 0.0;
-        if (_isChronoRunning || _chronoElapsedTime > 0) {
-            var elapsed = _chronoElapsedTime;
-            if (_isChronoRunning) { elapsed += System.getTimer().toLong() - _chronoStartTime; }
-            var chronoSec = (elapsed / 1000) % 60;
+        if (_chrono.isActive()) {
+            var chronoSec = _chrono.elapsedSeconds(Time.now().value()) % 60;
             secFrac = chronoSec / 60.0;
         } else {
             secFrac = System.getClockTime().sec / 60.0;
