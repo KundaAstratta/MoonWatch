@@ -15,7 +15,7 @@ cd "$(dirname "$0")"
 
 SDK_CFG="$HOME/Library/Application Support/Garmin/ConnectIQ/current-sdk.cfg"
 SDK_BIN="$(tr -d '\n' < "$SDK_CFG")/bin"
-KEY="$HOME/Code/sdkgarmin/developer_key"
+KEY="$HOME/Code/SlowMotionMoonWatch/developer_key"
 OUT_DIR="bin"
 
 # Une cible par résolution présente dans le manifest (toutes AMOLED)
