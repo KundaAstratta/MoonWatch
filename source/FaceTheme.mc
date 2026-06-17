@@ -14,10 +14,10 @@ module FaceTheme {
     // --- Moyeu central : cône dégradé concentrique, heures (Ø max, foncé) →
     //     secondes (Ø min, clair). Empilé heures sous minutes sous secondes. ---
     const HUB_HOUR_COLOR   = 0x555555;
-    const HUB_HOUR_RADIUS  = 16;
+    const HUB_HOUR_RADIUS  = 18;
     const HUB_MIN_COLOR    = 0x888888;
-    const HUB_MIN_RADIUS   = 12;
+    const HUB_MIN_RADIUS   = 13;
     const HUB_SEC_COLOR    = 0xCCCCCC;
-    const HUB_SEC_RADIUS   = 8;
+    const HUB_SEC_RADIUS   = 9;
     const HUB_PIVOT_RADIUS = 4;          // pivot central (couleur DK_GRAY)
 }

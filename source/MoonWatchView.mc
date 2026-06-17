@@ -573,10 +573,10 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.setColor(_colorHandMain, Graphics.COLOR_TRANSPARENT);
         
         // Hour Hand
-        drawBatonHand(dc, hourAngle, (_radius * 0.5).toNumber(), 9, FaceTheme.HUB_HOUR_RADIUS, FaceTheme.HUB_HOUR_COLOR);
+        drawBatonHand(dc, hourAngle, (_radius * 0.5).toNumber(), 11, FaceTheme.HUB_HOUR_RADIUS, FaceTheme.HUB_HOUR_COLOR);
         
         // Minute Hand
-        drawBatonHand(dc, minAngle, (_radius * 0.75).toNumber(), 8, FaceTheme.HUB_MIN_RADIUS, FaceTheme.HUB_MIN_COLOR);
+        drawBatonHand(dc, minAngle, (_radius * 0.75).toNumber(), 10, FaceTheme.HUB_MIN_RADIUS, FaceTheme.HUB_MIN_COLOR);
         
     }
     
