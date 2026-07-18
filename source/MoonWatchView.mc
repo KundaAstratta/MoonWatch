@@ -641,10 +641,9 @@ class MoonWatchView extends WatchUi.WatchFace {
 
     private function drawBatonHand(dc as Dc, angle as Float, length as Number, width as Number, capRadius as Number, capColor as Number) as Void {
         // Style "Baton" Speedmaster : largeur constante du moyeu à la pointe,
-        // base pleine largeur de la couleur du moyeu (capColor) près du pivot,
-        // corps blanc ombré 3D, pointe triangulaire biseautée.
-        // Termine par son propre disque de moyeu (capRadius/capColor) pour que
-        // l'aiguille paraisse solidaire de son cercle et s'empile proprement.
+        // corps métal uniforme du moyeu à la pointe, rempli de lume sur presque
+        // toute sa largeur (il ne reste qu'un fin cadre métallique de chaque côté),
+        // pointe triangulaire effilée. Termine par son propre disque de moyeu.
         var shadowColor = Graphics.COLOR_LT_GRAY;
         var mainColor   = _colorHandMain;
 
@@ -653,16 +652,12 @@ class MoonWatchView extends WatchUi.WatchFace {
 
         var tailLen    = 4;                // talon caché sous le cap central
         var halfWidth  = width / 2.0;
-
-        var baseEnd    = length * 0.30;    // fin de la base grise = départ du lume
-        var taperStart = length * 0.87;    // début de la pointe
+        var taperStart = length * 0.86;    // début de la pointe effilée
 
         // --- Points du fût (largeur constante : talon → début de pointe) ---
         var pBaseL  = toScreen(-tailLen,   -halfWidth, cos, sin);
         var pBaseR  = toScreen(-tailLen,    halfWidth, cos, sin);
-        var pMidL   = toScreen(baseEnd,    -halfWidth, cos, sin);
-        var pMidR   = toScreen(baseEnd,     halfWidth, cos, sin);
-        var pMidC   = toScreen(baseEnd,     0,         cos, sin);
+        var pBaseC  = toScreen(-tailLen,    0,         cos, sin);
         var pTaperL = toScreen(taperStart, -halfWidth, cos, sin);
         var pTaperR = toScreen(taperStart,  halfWidth, cos, sin);
         var pTaperC = toScreen(taperStart,  0,         cos, sin);
@@ -685,18 +680,13 @@ class MoonWatchView extends WatchUi.WatchFace {
         var opTip = toScreen(length.toFloat() + outlineW, 0, cos, sin);
         dc.fillPolygon([opTip, obTaperL, obTaperR]);
 
-        // === Base pleine largeur (talon → départ du lume) ===
-        // Couleur du disque de moyeu pour que l'aiguille paraisse coulée dans son cercle.
-        dc.setColor(capColor, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pBaseL, pBaseR, pMidR, pMidL]);
-
-        // === Corps (rectangle pleine largeur) ===
+        // === Corps métal uniforme (talon → début de pointe) ===
         dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pMidL, pMidR, pTaperR, pTaperL]);
+        dc.fillPolygon([pBaseL, pBaseR, pTaperR, pTaperL]);
 
         // Ombre moitié droite du corps
         dc.setColor(shadowColor, Graphics.COLOR_TRANSPARENT);
-        dc.fillPolygon([pMidR, pMidC, pTaperC, pTaperR]);
+        dc.fillPolygon([pBaseR, pBaseC, pTaperC, pTaperR]);
 
         // === Pointe (triangle corps → pointe) — 3 facettes biseautées ===
         // Base : triangle complet en mainColor
@@ -716,25 +706,11 @@ class MoonWatchView extends WatchUi.WatchFace {
         dc.setPenWidth(1);
         dc.drawLine(pTaperC[0], pTaperC[1], pTip[0], pTip[1]);
 
-        // Cap lume à la pointe — goutte effilée (teardrop)
-        if (_isInSleepMode) {
-            dc.setColor(_colorLume, Graphics.COLOR_TRANSPARENT);
-        } else {
-            dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_TRANSPARENT);
-        }
-        var gouteLen  = 5.0;                 // longueur de la goutte sous la pointe
-        var gouteHalf = 2.0;                 // demi-largeur du bulbe
-        var gouteBase = length.toFloat() - gouteLen;
-        var pGouteL = toScreen(gouteBase, -gouteHalf, cos, sin);
-        var pGouteR = toScreen(gouteBase,  gouteHalf, cos, sin);
-        var pGouteC = toScreen(gouteBase,  0,         cos, sin);
-        dc.fillPolygon([pTip, pGouteL, pGouteR]);             // corps effilé vers la pointe
-        dc.fillCircle(pGouteC[0].toNumber(), pGouteC[1].toNumber(), gouteHalf.toNumber()); // bulbe arrondi
-
-        // === Lume slot (30% → 82%, centré sur le corps) ===
-        var lumeStart = length * 0.30;
-        var lumeEnd   = length * 0.82;
-        var lumeWidth = halfWidth * 0.5;
+        // === Remplissage lume (17% → 85%) — signature Speedmaster : le lume
+        // occupe presque toute la largeur, ne laissant qu'un fin cadre métal ===
+        var lumeStart = length * 0.17;
+        var lumeEnd   = length * 0.85;
+        var lumeWidth = halfWidth * 0.70;
 
         var pL1 = toScreen(lumeStart, -lumeWidth, cos, sin);
         var pL2 = toScreen(lumeEnd,   -lumeWidth, cos, sin);
